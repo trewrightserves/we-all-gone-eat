@@ -103,6 +103,44 @@ debate shapes on other categories — wing flavors, pizza toppings,
 sodas, fast-food fries, BBQ sides, pies, breakfast plates, chips, ice
 cream, Kool-Aid, sauces, and gas-station snacks.
 
+## Write-ins (v4)
+
+Any pick can be a **write-in**. On the Leader's pick screen and on the
+voting screen, next to the 4 squares, there is an **✍️ Write in your
+own** box (40 characters max). The Leader can lock a write-in in secret;
+the crowd can vote write-ins; and a Switch Sides move — including the
+Man on an Island escape — can land on a fresh write-in too.
+
+How write-ins score — they are **buckets**, just like squares:
+
+- Write-in text is normalized into a grouping key: trimmed, lowercased,
+  punctuation stripped, extra spaces collapsed. "Froot Loops",
+  "froot loops!" and " FROOT  LOOPS " are the same bucket. A bucket is
+  displayed with the first version anybody submitted.
+- If a write-in's key matches a printed square's text, it counts **as
+  that square** — no separate bucket, no double-counting.
+- Everything else works exactly like squares: the top bucket takes the
+  majority, the Leader scores +3 when the top bucket is theirs (printed
+  or written), matching the Leader's bucket pays the match point, a tied
+  top is a split, and a lone voter in a write-in bucket gets the Man on
+  an Island nudge like anybody else. Lightning Rounds take write-ins
+  too, bucketed the same way.
+
+**Secrecy:** a write-in is as secret as a square. Before the reveal,
+other players see only that you voted — and, in the coin window, that a
+masked "✍️ Write-in" bucket holds N votes. The actual words are never
+sent to another phone until the reveal flips. (Even the bucket's
+internal key stays server-side; state carries an opaque bucket id.)
+
+**House Rule — Write-ins** (set in the lobby, **default ON**). Off: the
+write-in boxes disappear and the server refuses write-in submissions,
+so the table plays the printed 4 only.
+
+Stated simplifications: **bots never write in** — they lead and vote the
+printed squares only (their scoring runs on the same buckets). The
+**Phone a Friend** poll still offers the 4 printed squares only, and
+the free vote change it grants lands on a printed square too.
+
 ## How a game flows
 
 1. **Lobby** — host creates the room, everyone joins by code, host sets the
@@ -152,6 +190,9 @@ toggles, labeled in the game:
    the tally is shown* (played during voting; the Island nudge only exists in
    the after-tally mode, since there is no tally to be stranded on yet).
 5. **Target score** — 7 (default), 10, 12, or 15.
+6. **Write-ins** — *On* (default): the Leader and the crowd may write in
+   their own pick instead of tapping a square vs *Off*: the printed 4
+   only (see the Write-ins section above).
 
 ## Deploy (Render / Railway / Fly-style hosts)
 
@@ -179,8 +220,8 @@ server.js          Game server: HTTP + WebSocket, all state and scoring
 bots.js            Bot players: names, personalities, their card judgment
 deck.js            The full 150-card deck + winner result-card texts
 public/index.html  The entire phone client (no build step, no CDN)
-test/e2e-test.js   Scripted end-to-end tests (Games A/B/C/D + personalities)
-test/last-run.log  Latest passing test output (82 assertions)
+test/e2e-test.js   Scripted end-to-end tests (Games A/B/C/D/E/E5/G + personalities)
+test/last-run.log  Latest passing test output (105 assertions)
 ```
 
 ## Test
@@ -201,4 +242,11 @@ measurably vote differently. Game D adds v3: deck integrity for the
 Food Debates batch tagged consistently) and the group chat — delivery
 in the lobby and mid-game, no leaks into another room, the join-time
 history handoff, empty/over-length handling, HTML kept inert, and the
-send-rate guard.
+send-rate guard. Games E, E5, and G add v4 write-ins: a secret leader
+write-in the crowd matches for +3, twin write-ins with different
+casing/punctuation grouping into one bucket, a write-in that spells a
+printed square counting as that square, a lone write-in voter taking
+the Island switch to a fresh write-in, masked write-in buckets before
+the reveal, a full write-in game played to a winner, and the Write-ins
+House Rule switched off — write-in submissions refused while the
+printed game proceeds.
