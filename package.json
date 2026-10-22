@@ -1,0 +1,17 @@
+{
+  "name": "we-all-gone-eat",
+  "version": "1.0.0",
+  "description": "We All Gone Eat — online multiplayer party voting game (Tré's original 2020 design)",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/e2e-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
