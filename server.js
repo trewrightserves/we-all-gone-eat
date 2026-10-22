@@ -23,6 +23,9 @@ const CHAT_MAX_LEN = 300;
 const CHAT_HISTORY_MAX = 50;      // room keeps this much talk; joiners get it
 const CHAT_RATE_COUNT = 5;        // messages allowed...
 const CHAT_RATE_WINDOW_MS = 4000; // ...per this window, per player
+// Write-ins (v4): a player may type their own pick instead of tapping a
+// square. Text is capped, trimmed, and normalized into a grouping key.
+const WRITEIN_MAX_LEN = 40;
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ'; // no I/L/O look-alikes
 const MAX_PLAYERS = 8;
@@ -48,6 +51,7 @@ function defaultSettings() {
     splitRule: 'pays',       // 'pays' | 'split'          (House Rule 2)
     coinLimit: 'player',     // 'player' | 'table'        (House Rule 3)
     switchTiming: 'after',   // 'after' | 'before'        (House Rule 4)
+    writeIns: true,          // true | false              (House Rule 5, v4)
   };
 }
 
@@ -138,14 +142,84 @@ function crowdOf(room) {
   return room.players.filter(p => p.id !== room.round.leaderId);
 }
 function tallyOf(votes, n = 4) {
+  // Printed-square counts only: write-in choices (string keys) are not
+  // squares. Bots read this as their popularity heuristic, unchanged.
   const t = [0, 0, 0, 0];
-  for (const v of votes.values()) if (v >= 0 && v < n) t[v]++;
+  for (const v of votes.values()) if (typeof v === 'number' && v >= 0 && v < n) t[v]++;
   return t;
 }
-function topInfo(tally) {
-  const max = Math.max(...tally);
-  const tops = tally.map((c, i) => (c === max ? i : -1)).filter(i => i >= 0);
+// ---------- write-ins (v4) ----------
+// A stored choice is either a printed option index (number) or a write-in
+// key (string). A write-in's key is its text normalized: trimmed, lowercased,
+// punctuation stripped, whitespace collapsed — so "Froot Loops",
+// "froot loops!" and " FROOT  LOOPS " are the same bucket. If the key
+// matches a printed option's normalized text, the write-in counts AS that
+// printed option (stored as the number). Otherwise the write-in forms its
+// own bucket, displayed with the first-submitted original (trimmed) text.
+function normalizeWriteIn(text) {
+  return String(text).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function bucketKey(choice) {
+  return typeof choice === 'number' ? 'o' + choice : 'w:' + choice;
+}
+function bucketCountsOf(votes) {
+  const m = new Map();
+  for (const v of votes.values()) {
+    const k = bucketKey(v);
+    m.set(k, (m.get(k) || 0) + 1);
+  }
+  return m;
+}
+function topBucketsOf(counts) {
+  let max = 0;
+  for (const c of counts.values()) max = Math.max(max, c);
+  const tops = [...counts.keys()].filter(k => counts.get(k) === max);
   return { max, tops, isSplit: tops.length > 1 };
+}
+function choiceLabel(card, choice, writeLabels) {
+  if (typeof choice === 'number') return card.options[choice];
+  return (writeLabels && writeLabels.get(choice)) || choice;
+}
+// Buckets in display order: printed squares in card order, then write-in
+// buckets in first-submitted order. Pre-reveal, write-in labels are MASKED
+// (counts are public tally info; the text is secret until the reveal).
+function bucketsForState(card, votes, writeLabels, revealText) {
+  const counts = bucketCountsOf(votes);
+  const out = [];
+  for (let i = 0; i < 4; i++) {
+    const c = counts.get('o' + i) || 0;
+    if (c) out.push({ key: 'o' + i, label: card.options[i], count: c, writeIn: false });
+  }
+  const seen = new Set(out.map(b => b.key));
+  let wiCount = 0;
+  for (const v of votes.values()) {
+    const k = bucketKey(v);
+    if (typeof v === 'string' && !seen.has(k)) {
+      seen.add(k);
+      // The state key is deliberately OPAQUE ('w0', 'w1' by appearance):
+      // the real bucket key is the normalized write-in text, and shipping
+      // it would leak everyone's words before the reveal.
+      out.push({ key: 'w' + (wiCount++), label: revealText ? choiceLabel(card, v, writeLabels) : '✍️ Write-in', count: counts.get(k) || 0, writeIn: true });
+    }
+  }
+  return out;
+}
+// Resolve a client submission ({option} or {writeIn}) into a stored choice.
+// writeLabels records each write-in bucket's first-submitted display text.
+function parseChoice(room, card, msg, writeLabels) {
+  if (typeof msg.writeIn === 'string') {
+    if (!room.settings.writeIns) return { error: 'House rule: write-ins are off at this table.' };
+    const text = msg.writeIn.trim().slice(0, WRITEIN_MAX_LEN);
+    const key = normalizeWriteIn(text);
+    if (!text || !key) return { error: 'Write something in first — blank plates do not count.' };
+    const printed = card.options.findIndex(o => normalizeWriteIn(o) === key);
+    if (printed >= 0) return { choice: printed };
+    if (writeLabels && !writeLabels.has(key)) writeLabels.set(key, text);
+    return { choice: key };
+  }
+  const opt = msg.option | 0;
+  if (opt < 0 || opt > 3) return { error: 'Pick one of the four squares.' };
+  return { choice: opt };
 }
 
 // ---------- state serialization (per-player; protects the secret pick) ----------
@@ -154,6 +228,14 @@ function stateFor(room, me) {
   const r = room.round;
   const inRound = !!r && ['leaderPick', 'voting', 'coinWindow', 'discussion', 'repoll'].includes(room.phase);
   const showTally = !!r && ['coinWindow', 'discussion', 'repoll', 'reveal'].includes(room.phase);
+  // My own choice, split for the client: printed index in yourVote /
+  // yourPick, write-in display text in yourVoteText / yourPickText. These
+  // are the ONLY places write-in text appears in state before the reveal,
+  // and only ever for the player who wrote it — never for anyone else.
+  const myVoteRaw = r ? r.votes.get(me.id) : (room.lightning ? room.lightning.votes.get(me.id) : undefined);
+  const myVoteCard = r ? r.card : (room.lightning ? room.lightning.card : null);
+  const myVoteLabels = r ? r.writeLabels : (room.lightning ? room.lightning.writeLabels : null);
+  const myPickRaw = r && r.leaderId === me.id ? r.leaderPick : undefined;
   const view = {
     type: 'state',
     code: room.code,
@@ -166,8 +248,10 @@ function stateFor(room, me) {
       score: me.score,
       coins: me.coins,
       isLeader: !!r && r.leaderId === me.id,
-      yourVote: r ? (r.votes.get(me.id) ?? null) : (room.lightning ? (room.lightning.votes.get(me.id) ?? null) : null),
-      yourPick: r && r.leaderId === me.id ? r.leaderPick : null,
+      yourVote: typeof myVoteRaw === 'number' ? myVoteRaw : null,
+      yourVoteText: typeof myVoteRaw === 'string' ? choiceLabel(myVoteCard, myVoteRaw, myVoteLabels) : null,
+      yourPick: typeof myPickRaw === 'number' ? myPickRaw : null,
+      yourPickText: typeof myPickRaw === 'string' ? choiceLabel(r.card, myPickRaw, r.writeLabels) : null,
       freeChange: !!r && r.freeChange.has(me.id),
       ready: !!r && r.ready.has(me.id),
     },
@@ -188,6 +272,7 @@ function stateFor(room, me) {
     leaderName: r ? (room.players.find(p => p.id === r.leaderId) || {}).name : null,
     card: inRound || room.phase === 'reveal' ? (r ? r.card : null) : (room.lightning ? room.lightning.card : null),
     tally: showTally && r ? tallyOf(r.votes) : null,
+    buckets: showTally && r ? bucketsForState(r.card, r.votes, r.writeLabels, room.phase === 'reveal') : null,
     votesIn: r ? r.votes.size : 0,
     crowdCount: r ? crowdOf(room).length : 0,
     timerEndsAt: r && (room.phase === 'discussion' || room.phase === 'repoll') ? r.timerEndsAt : null,
@@ -344,6 +429,7 @@ function nextRound(room) {
     card: drawCard(room),
     leaderPick: null,
     votes: new Map(),
+    writeLabels: new Map(), // write-in bucket key -> first-submitted display text
     coinsUsed: new Map(), // playerId -> coins used this round
     tableCoinsUsed: 0,
     ready: new Set(),
@@ -370,11 +456,13 @@ function checkVoteComplete(room) {
 }
 
 function sendIslandPrompts(room) {
-  const tally = tallyOf(room.round.votes);
+  // A player is on an island when their BUCKET — printed square or
+  // write-in — holds exactly one vote: theirs.
+  const counts = bucketCountsOf(room.round.votes);
   for (const p of crowdOf(room)) {
     const v = room.round.votes.get(p.id);
-    if (v !== undefined && tally[v] === 1 && p.connected && p.coins.switch) {
-      send(p, { type: 'islandPrompt', option: v, optionLabel: room.round.card.options[v] });
+    if (v !== undefined && counts.get(bucketKey(v)) === 1 && p.connected && p.coins.switch) {
+      send(p, { type: 'islandPrompt', option: typeof v === 'number' ? v : null, writeIn: typeof v === 'string', optionLabel: choiceLabel(room.round.card, v, room.round.writeLabels) });
     }
   }
 }
@@ -427,21 +515,25 @@ function doReveal(room) {
   // expire this round's polls
   for (const t of r.pollTokens) { const poll = polls.get(t); if (poll) poll.expired = true; }
   const tally = tallyOf(r.votes);
-  const { tops, isSplit } = topInfo(tally);
+  // Scoring runs on BUCKETS: the 4 printed squares plus any write-in
+  // buckets the crowd built. Top group, majority, and leader match are
+  // all bucket comparisons, exactly as they were square comparisons.
+  const counts = bucketCountsOf(r.votes);
+  const { tops, isSplit } = topBucketsOf(counts);
   const leader = room.players.find(p => p.id === r.leaderId);
   let leaderPoints = 0;
-  if (!isSplit && tops[0] === r.leaderPick) leaderPoints = 3;
+  if (!isSplit && r.leaderPick !== null && tops[0] === bucketKey(r.leaderPick)) leaderPoints = 3;
   leader.score += leaderPoints;
 
   const breakdown = crowdOf(room).map(p => {
     const v = r.votes.get(p.id);
     const hasVote = v !== undefined;
-    const inTop = hasVote && tops.includes(v);
+    const inTop = hasVote && tops.includes(bucketKey(v));
     const majority = hasVote && (isSplit ? (room.settings.splitRule === 'pays' && inTop) : inTop);
-    const match = hasVote && v === r.leaderPick;
+    const match = hasVote && r.leaderPick !== null && bucketKey(v) === bucketKey(r.leaderPick);
     const points = (majority ? 1 : 0) + (match ? 1 : 0);
     p.score += points;
-    return { playerId: p.id, name: p.name, isBot: !!p.isBot, vote: hasVote ? v : null, voteLabel: hasVote ? r.card.options[v] : null, majority, match, points, total: p.score };
+    return { playerId: p.id, name: p.name, isBot: !!p.isBot, vote: hasVote ? v : null, voteLabel: hasVote ? choiceLabel(r.card, v, r.writeLabels) : null, voteWriteIn: hasVote && typeof v === 'string', majority, match, points, total: p.score };
   });
   room.voteHistory.push(tally);
 
@@ -450,10 +542,12 @@ function doReveal(room) {
     leaderId: r.leaderId,
     leaderName: leader.name,
     leaderPick: r.leaderPick,
-    leaderPickLabel: r.card.options[r.leaderPick],
+    leaderPickLabel: r.leaderPick !== null ? choiceLabel(r.card, r.leaderPick, r.writeLabels) : null,
+    leaderPickWriteIn: typeof r.leaderPick === 'string',
     leaderPoints,
     tally,
     topOptions: tops,
+    buckets: bucketsForState(r.card, r.votes, r.writeLabels, true),
     isSplit,
     breakdown,
   };
@@ -479,6 +573,7 @@ function startLightning(room, contenders) {
     contenders,
     card: drawCard(room),
     votes: new Map(),
+    writeLabels: new Map(),
     attempts: [],
     leaderId: room.round ? room.round.leaderId : null,
   };
@@ -496,27 +591,30 @@ function resolveLightning(room) {
   const L = room.lightning;
   const leaderId = L.leaderId;
   const primaryIds = new Set([...L.contenders, ...(leaderId ? [leaderId] : [])]);
-  const primaryVotes = [...L.votes.entries()].filter(([id]) => primaryIds.has(id)).map(([, v]) => v);
-  const tieVotes = [...L.votes.entries()].filter(([id]) => !primaryIds.has(id)).map(([, v]) => v);
+  const primaryEntries = [...L.votes.entries()].filter(([id]) => primaryIds.has(id));
+  const tieEntries = [...L.votes.entries()].filter(([id]) => !primaryIds.has(id));
 
-  function countsFor(extra) {
-    const pool = [...primaryVotes, ...extra];
-    const tally = tallyOf(pool);
-    return L.contenders.map(id => ({ id, vote: L.votes.get(id), count: tally[L.votes.get(id)] || 0 }));
+  // Counts are per BUCKET (printed square or write-in), same as a reveal.
+  function countsFor(extraEntries) {
+    const counts = bucketCountsOf(new Map([...primaryEntries, ...extraEntries]));
+    return L.contenders.map(id => {
+      const vote = L.votes.get(id);
+      return { id, vote, count: vote === undefined ? 0 : (counts.get(bucketKey(vote)) || 0) };
+    });
   }
   let standings = countsFor([]);
   let best = Math.max(...standings.map(s => s.count));
   let winners = standings.filter(s => s.count === best);
   let usedTiebreak = false;
-  if (winners.length > 1 && tieVotes.length > 0) {
+  if (winners.length > 1 && tieEntries.length > 0) {
     usedTiebreak = true;
-    standings = countsFor(tieVotes);
+    standings = countsFor(tieEntries);
     best = Math.max(...standings.map(s => s.count));
     winners = standings.filter(s => s.count === best);
   }
   L.attempts.push({
     card: L.card,
-    standings: standings.map(s => ({ name: (room.players.find(p => p.id === s.id) || {}).name, vote: s.vote, voteLabel: L.card.options[s.vote], count: s.count })),
+    standings: standings.map(s => ({ name: (room.players.find(p => p.id === s.id) || {}).name, vote: s.vote, voteLabel: s.vote === undefined ? null : choiceLabel(L.card, s.vote, L.writeLabels), count: s.count })),
     usedTiebreak,
   });
   if (winners.length === 1) {
@@ -527,6 +625,7 @@ function resolveLightning(room) {
   } else {
     L.card = drawCard(room);
     L.votes = new Map();
+    L.writeLabels = new Map(); // write-in keys belong to the old card
     broadcast(room);
   }
 }
@@ -569,6 +668,7 @@ function handleMessage(room, player, msg) {
       if (['pays', 'split'].includes(s.splitRule)) room.settings.splitRule = s.splitRule;
       if (['player', 'table'].includes(s.coinLimit)) room.settings.coinLimit = s.coinLimit;
       if (['after', 'before'].includes(s.switchTiming)) room.settings.switchTiming = s.switchTiming;
+      if (typeof s.writeIns === 'boolean') room.settings.writeIns = s.writeIns;
       broadcast(room);
       break;
     }
@@ -600,19 +700,19 @@ function handleMessage(room, player, msg) {
     }
     case 'leaderPick': {
       if (room.phase !== 'leaderPick' || !r || r.leaderId !== player.id) return fail(player, 'Not your pick right now.');
-      const opt = msg.option | 0;
-      if (opt < 0 || opt > 3) return fail(player, 'Pick one of the four squares.');
-      r.leaderPick = opt;
+      const parsed = parseChoice(room, r.card, msg, r.writeLabels);
+      if (parsed.error) return fail(player, parsed.error);
+      r.leaderPick = parsed.choice;
       room.phase = 'voting';
       broadcast(room);
       checkVoteComplete(room);
       break;
     }
     case 'vote': {
-      const opt = msg.option | 0;
-      if (opt < 0 || opt > 3) return fail(player, 'Vote for one of the four squares.');
       if (room.phase === 'lightning') {
-        room.lightning.votes.set(player.id, opt);
+        const parsedL = parseChoice(room, room.lightning.card, msg, room.lightning.writeLabels);
+        if (parsedL.error) return fail(player, parsedL.error);
+        room.lightning.votes.set(player.id, parsedL.choice);
         broadcast(room);
         checkLightningComplete(room);
         break;
@@ -621,11 +721,15 @@ function handleMessage(room, player, msg) {
       if (r.leaderId === player.id) return fail(player, 'The Leader does not vote.');
       if (room.phase === 'voting') {
         if (r.votes.has(player.id)) return fail(player, 'Vote locked. Switch Sides can change it.');
-        r.votes.set(player.id, opt);
+        const parsed = parseChoice(room, r.card, msg, r.writeLabels);
+        if (parsed.error) return fail(player, parsed.error);
+        r.votes.set(player.id, parsed.choice);
         broadcast(room);
         checkVoteComplete(room);
       } else if (room.phase === 'repoll') {
-        r.votes.set(player.id, opt); // free change during re-poll
+        const parsed = parseChoice(room, r.card, msg, r.writeLabels);
+        if (parsed.error) return fail(player, parsed.error);
+        r.votes.set(player.id, parsed.choice); // free change during re-poll
         broadcast(room);
       } else {
         return fail(player, 'Voting is not open right now.');
@@ -637,22 +741,26 @@ function handleMessage(room, player, msg) {
       if (!r) return fail(player, 'No round in progress.');
       if (r.leaderId === player.id) return fail(player, 'The Leader has no vote to switch.');
       if (!player.coins.switch) return fail(player, 'Your Switch Sides coin is spent.');
-      const opt = msg.option | 0;
-      if (opt < 0 || opt > 3) return fail(player, 'Pick one of the four squares.');
       if (!r.votes.has(player.id)) return fail(player, 'Vote first, then switch.');
+      // The switch target may be a printed square or a fresh write-in.
+      const parsed = parseChoice(room, r.card, msg, r.writeLabels);
+      if (parsed.error) return fail(player, parsed.error);
       const timing = room.settings.switchTiming;
       const phaseOk = timing === 'after' ? room.phase === 'coinWindow' : room.phase === 'voting';
       if (!phaseOk) return fail(player, timing === 'after' ? 'Switch Sides opens after the tally is shown.' : 'House rule: Switch Sides must be played before the tally is shown.');
       const gate = coinGate(room, player);
       if (gate) return fail(player, gate);
       spendCoin(room, player, 'switch');
-      r.votes.set(player.id, opt);
+      r.votes.set(player.id, parsed.choice);
       broadcast(room);
       if (room.phase === 'voting') checkVoteComplete(room);
       break;
     }
     case 'freeVote': {
-      // The one free change granted after a Phone a Friend answer.
+      // The one free change granted after a Phone a Friend answer. The
+      // friend's poll only offers the printed squares, so the free change
+      // lands on a printed square too (v4 simplification).
+      if (typeof msg.writeIn === 'string') return fail(player, 'A Phone a Friend change lands on the printed squares — pick one of the four.');
       if (!r || !r.freeChange.has(player.id)) return fail(player, 'No free change waiting.');
       const opt = msg.option | 0;
       if (opt < 0 || opt > 3) return fail(player, 'Pick one of the four squares.');
