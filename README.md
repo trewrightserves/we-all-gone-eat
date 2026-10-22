@@ -26,6 +26,47 @@ Optional environment variables:
 | `PORT`          | `3000`  | Port the server listens on (hosts set this).   |
 | `DISCUSSION_MS` | `60000` | Filibuster discussion length (60s real games). |
 | `REPOLL_MS`     | `15000` | Re-poll window after a Filibuster (15s).       |
+| `BOT_DELAY_MIN_MS` | `1500` | Fastest a bot acts (pick, vote, ready).      |
+| `BOT_DELAY_MAX_MS` | `4000` | Slowest a bot acts — the human-like pause.   |
+
+## Bot players (v2)
+
+Short a few cousins? The host can seat **bot players** from the lobby
+(**Add a bot to the table**) and send them back the same way, any time
+before the game starts. Bots count toward the 3-player minimum and the
+8-player max, so the solo path is: create a room, seat at least 2 bots,
+hit Start. They also fill seats in a short-handed friends game.
+
+Each bot has a cookout name (Auntie Bertha, Uncle June Bug, Cousin
+Peaches…) and one of four personalities, tagged **BOT · \<personality\>**
+everywhere players are listed:
+
+- **Wild Card** — leans toward the least-picked squares and scrambles
+  hard; on any given card it can land anywhere.
+- **Safe Hands** — rides what it judges the mainstream pick, using a
+  card-text popularity heuristic; usually lands on the popular square.
+- **Copycat** — watches the table's revealed vote history and orders
+  what the table has been eating.
+- **Contrarian** — runs from the popular square and takes the lonely
+  plate, almost every time.
+
+How they play:
+
+- Bots live entirely on the server and take their turns on a short,
+  randomized human-like delay (about 1.5–4s). As Leader, a bot secretly
+  locks its own pick with its personality; as crowd, it votes the same
+  way. A bot's judgment uses only public information — the card and past
+  reveals — never another player's secret pick.
+- A bot stranded alone on a square (Man on an Island) answers its own
+  nudge: by personality, it sometimes spends its Switch Sides coin to
+  move before readying up, so a table never stalls on a bot.
+- Bots play Lightning Rounds like anybody else.
+
+Stated simplifications: **bots never use the Filibuster or Phone a
+Friend coins** — Switch Sides is the only coin a bot can spend, and
+only through the Man on an Island flow. Bots keep their vote during a
+Filibuster re-poll. Hosting never falls to a bot, and a room closes on
+the normal schedule once the last human leaves — no zombie bot games.
 
 ## How a game flows
 
@@ -100,19 +141,24 @@ No database, no environment secrets, nothing else to configure.
 
 ```
 server.js          Game server: HTTP + WebSocket, all state and scoring
+bots.js            Bot players: names, personalities, their card judgment
 deck.js            The full 100-card deck + winner result-card texts
 public/index.html  The entire phone client (no build step, no CDN)
-test/e2e-test.js   Scripted 4-player end-to-end test (two full games)
-test/last-run.log  Latest passing test output (46 assertions)
+test/e2e-test.js   Scripted end-to-end tests (Games A/B/C + personalities)
+test/last-run.log  Latest passing test output (63 assertions)
 ```
 
 ## Test
 
 ```bash
-npm test   # spawns the server with fast timers and plays two scripted games
+npm test   # spawns the server with fast timers and plays scripted games
 ```
 
-The test asserts exact scoring (majority/match/split math), coin behavior
+The suite asserts exact scoring (majority/match/split math), coin behavior
 (Filibuster re-poll, Switch Sides, Phone a Friend answered over HTTP),
 secrecy of the Leader's pick, reconnection, and a tie forced into a
-Lightning Round with a declared winner.
+Lightning Round with a declared winner (Games A and B, 46 assertions).
+Game C adds the bots: host-only add/remove in the lobby, a 1-human +
+2-bot game played to a winner with bot-led rounds and a bot Man on an
+Island, and a distribution sanity check that the four personalities
+measurably vote differently.

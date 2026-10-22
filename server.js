@@ -8,10 +8,15 @@ const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { CARDS, WINNER_TEXTS } = require('./deck');
+const { PERSONALITIES, PERSONALITY_ORDER, BOT_NAMES, chooseOption, islandDecision } = require('./bots');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DISCUSSION_MS = parseInt(process.env.DISCUSSION_MS || '60000', 10);
 const REPOLL_MS = parseInt(process.env.REPOLL_MS || '15000', 10);
+// Bot "thinking" time: a human-like pause before a bot picks, votes,
+// readies up, or answers its Man on an Island nudge.
+const BOT_DELAY_MIN_MS = parseInt(process.env.BOT_DELAY_MIN_MS || '1500', 10);
+const BOT_DELAY_MAX_MS = parseInt(process.env.BOT_DELAY_MAX_MS || '4000', 10);
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ'; // no I/L/O look-alikes
 const MAX_PLAYERS = 8;
@@ -51,7 +56,27 @@ function makePlayer(name) {
     connected: false,
     score: 0,
     coins: freshCoins(),
+    isBot: false,
+    personality: null, // key into PERSONALITIES, bots only
   };
+}
+
+// A bot is a regular player with no socket: connected stays true so the
+// phase gates count it, and driveBots() plays its turns on timers.
+// The host is always a human, so bots are only ever created by addBot.
+function makeBot(room) {
+  const usedNames = new Set(room.players.map(p => p.name));
+  let name = BOT_NAMES.find(n => !usedNames.has(n));
+  if (!name) name = `Bot Cousin ${room.players.filter(p => p.isBot).length + 1}`;
+  const botCount = room.players.filter(p => p.isBot).length;
+  const personality = PERSONALITY_ORDER[botCount % PERSONALITY_ORDER.length];
+  const bot = makePlayer(name);
+  bot.isBot = true;
+  bot.personality = personality;
+  bot.connected = true;
+  bot._botTimer = null;
+  bot._botFor = null;
+  return bot;
 }
 
 function makeRoom(hostPlayer) {
@@ -70,6 +95,7 @@ function makeRoom(hostPlayer) {
     lastLightning: null,
     winnerId: null,
     winnerText: null,
+    voteHistory: [],   // tallies from completed rounds (public info; bots read this)
     createdAt: Date.now(),
     emptySince: null,
   };
@@ -94,7 +120,8 @@ function drawCard(room) {
 function effectiveHost(room) {
   const host = room.players.find(p => p.id === room.hostId);
   if (host && host.connected) return host;
-  return room.players.find(p => p.connected) || host;
+  // Hosting falls to a connected HUMAN — a bot never runs the table.
+  return room.players.find(p => p.connected && !p.isBot) || room.players.find(p => p.connected) || host;
 }
 function isHost(room, player) {
   const h = effectiveHost(room);
@@ -142,6 +169,8 @@ function stateFor(room, me) {
       name: p.name,
       score: p.score,
       connected: p.connected,
+      isBot: !!p.isBot,
+      personality: p.isBot ? PERSONALITIES[p.personality].label : null,
       isHost: host && p.id === host.id,
       isLeader: !!r && r.leaderId === p.id,
       hasVoted: r ? r.votes.has(p.id) : (room.lightning ? room.lightning.votes.has(p.id) : false),
@@ -167,9 +196,10 @@ function stateFor(room, me) {
     winner: room.phase === 'gameOver' && room.winnerId ? {
       id: room.winnerId,
       name: (room.players.find(p => p.id === room.winnerId) || {}).name,
+      isBot: !!(room.players.find(p => p.id === room.winnerId) || {}).isBot,
       text: room.winnerText,
     } : null,
-    standings: [...room.players].sort((a, b) => b.score - a.score).map(p => ({ id: p.id, name: p.name, score: p.score })),
+    standings: [...room.players].sort((a, b) => b.score - a.score).map(p => ({ id: p.id, name: p.name, score: p.score, isBot: !!p.isBot })),
   };
   return view;
 }
@@ -181,13 +211,112 @@ function send(player, obj) {
 }
 function broadcast(room) {
   for (const p of room.players) if (p.connected) send(p, stateFor(room, p));
+  driveBots(room);
 }
 function fail(player, message) { send(player, { type: 'error', message }); }
+
+// ---------- bot players ----------
+// Bots act by feeding their moves through handleMessage, exactly like a
+// human's taps — so every v1 rule (coin gates, pick secrecy, phase checks)
+// is enforced on bots by the same code path. Bots only ever schedule
+// timers; each timer re-validates the room/round/phase it was set for, so
+// a stale timer from a skipped or restarted round can never fire a move.
+function botDelay() {
+  const span = Math.max(0, BOT_DELAY_MAX_MS - BOT_DELAY_MIN_MS);
+  return BOT_DELAY_MIN_MS + Math.floor(Math.random() * (span + 1));
+}
+function scheduleBot(room, bot, tag, act) {
+  // One pending move at a time — but a pending timer for a DIFFERENT tag
+  // is stale by definition (that phase/round has passed, and its callback
+  // would only guard-fail). Cancel it and schedule the current move, or
+  // the bot can be left holding an old timer while the table waits on it.
+  if (bot._botTimer && bot._botFor !== tag) clearBotTimer(bot);
+  if (bot._botTimer) return;
+  bot._botFor = tag;
+  bot._botTimer = setTimeout(() => {
+    bot._botTimer = null;
+    bot._botFor = null;
+    if (!rooms.has(room.code)) return;
+    if (!room.players.includes(bot)) return;
+    try { act(); } catch (e) { console.error('bot action error', e); }
+  }, botDelay());
+  if (bot._botTimer.unref) bot._botTimer.unref();
+}
+function clearBotTimer(bot) {
+  if (bot._botTimer) { clearTimeout(bot._botTimer); bot._botTimer = null; bot._botFor = null; }
+}
+
+function driveBots(room) {
+  const bots = room.players.filter(p => p.isBot);
+  if (!bots.length) return;
+  const r = room.round;
+
+  if (room.phase === 'leaderPick' && r) {
+    const leader = room.players.find(p => p.id === r.leaderId);
+    if (leader && leader.isBot) {
+      scheduleBot(room, leader, `pick:${room.roundNumber}`, () => {
+        if (room.round !== r || room.phase !== 'leaderPick' || r.leaderPick !== null) return;
+        const option = chooseOption(leader.personality, r.card, room.voteHistory);
+        handleMessage(room, leader, { type: 'leaderPick', option });
+      });
+    }
+    return;
+  }
+
+  if (room.phase === 'voting' && r) {
+    for (const bot of bots) {
+      if (bot.id === r.leaderId || r.votes.has(bot.id)) continue;
+      scheduleBot(room, bot, `vote:${room.roundNumber}`, () => {
+        if (room.round !== r || room.phase !== 'voting' || r.votes.has(bot.id)) return;
+        const option = chooseOption(bot.personality, r.card, room.voteHistory);
+        handleMessage(room, bot, { type: 'vote', option });
+      });
+    }
+    return;
+  }
+
+  if (room.phase === 'coinWindow' && r) {
+    for (const bot of bots) {
+      if (r.ready.has(bot.id)) continue;
+      scheduleBot(room, bot, `ready:${room.roundNumber}`, () => {
+        if (room.round !== r || room.phase !== 'coinWindow' || r.ready.has(bot.id)) return;
+        // Man on an Island: a bot stranded alone answers its own nudge
+        // before readying up, so the table never stalls on a bot. This is
+        // the ONLY way a bot ever spends a coin (its Switch Sides).
+        const v = r.votes.get(bot.id);
+        if (v !== undefined && tallyOf(r.votes)[v] === 1 && bot.coins.switch && room.settings.switchTiming === 'after') {
+          const target = islandDecision(bot.personality, r.card, v, room.voteHistory);
+          if (target !== null && target !== v) {
+            handleMessage(room, bot, { type: 'switchVote', option: target });
+          }
+        }
+        // The switch (or staying put) does not change the phase; ready up.
+        if (room.round === r && room.phase === 'coinWindow' && !r.ready.has(bot.id)) {
+          handleMessage(room, bot, { type: 'ready' });
+        }
+      });
+    }
+    return;
+  }
+
+  if (room.phase === 'lightning' && room.lightning) {
+    const L = room.lightning;
+    for (const bot of bots) {
+      if (L.votes.has(bot.id)) continue;
+      scheduleBot(room, bot, `lightning:${room.roundNumber}:${L.attempts.length}:${L.card.prompt}`, () => {
+        if (room.lightning !== L || room.phase !== 'lightning' || L.votes.has(bot.id)) return;
+        const option = chooseOption(bot.personality, L.card, room.voteHistory);
+        handleMessage(room, bot, { type: 'vote', option });
+      });
+    }
+  }
+}
 
 // ---------- round flow ----------
 function startGame(room) {
   for (const p of room.players) { p.score = 0; p.coins = freshCoins(); }
   shuffleDeck(room);
+  room.voteHistory = [];
   room.roundNumber = 0;
   room.winnerId = null;
   room.winnerText = null;
@@ -302,8 +431,9 @@ function doReveal(room) {
     const match = hasVote && v === r.leaderPick;
     const points = (majority ? 1 : 0) + (match ? 1 : 0);
     p.score += points;
-    return { playerId: p.id, name: p.name, vote: hasVote ? v : null, voteLabel: hasVote ? r.card.options[v] : null, majority, match, points, total: p.score };
+    return { playerId: p.id, name: p.name, isBot: !!p.isBot, vote: hasVote ? v : null, voteLabel: hasVote ? r.card.options[v] : null, majority, match, points, total: p.score };
   });
+  room.voteHistory.push(tally);
 
   room.lastReveal = {
     card: r.card,
@@ -411,6 +541,25 @@ function handleMessage(room, player, msg) {
       if (['pays', 'split'].includes(s.splitRule)) room.settings.splitRule = s.splitRule;
       if (['player', 'table'].includes(s.coinLimit)) room.settings.coinLimit = s.coinLimit;
       if (['after', 'before'].includes(s.switchTiming)) room.settings.switchTiming = s.switchTiming;
+      broadcast(room);
+      break;
+    }
+    case 'addBot': {
+      if (!isHost(room, player)) return fail(player, 'Only the host can seat a bot.');
+      if (room.phase !== 'lobby') return fail(player, 'Bots take their seats in the lobby, before the game starts.');
+      if (room.players.length >= MAX_PLAYERS) return fail(player, 'The table is full — 8 seats, that is everybody.');
+      const bot = makeBot(room);
+      room.players.push(bot);
+      broadcast(room);
+      break;
+    }
+    case 'removeBot': {
+      if (!isHost(room, player)) return fail(player, 'Only the host can send a bot back to the kitchen.');
+      if (room.phase !== 'lobby') return fail(player, 'Bots leave from the lobby, not mid-game.');
+      const idx = room.players.findIndex(p => p.id === msg.playerId && p.isBot);
+      if (idx < 0) return fail(player, 'That seat is not a bot.');
+      const [bot] = room.players.splice(idx, 1);
+      clearBotTimer(bot);
       broadcast(room);
       break;
     }
@@ -548,6 +697,7 @@ function handleMessage(room, player, msg) {
       room.winnerText = null;
       room.round = null;
       room.lightning = null;
+      room.voteHistory = [];
       room.lastReveal = null;
       room.lastLightning = null;
       room.roundNumber = 0;
@@ -734,7 +884,9 @@ wss.on('connection', ws => {
       if (room.phase === 'voting') checkVoteComplete(room);
       if (room.phase === 'coinWindow') checkAllReady(room);
       if (room.phase === 'lightning') checkLightningComplete(room);
-      if (!room.players.some(p => p.connected)) room.emptySince = Date.now();
+      // A room lives while a HUMAN is in it. Bots never keep a room
+      // alive on their own — no zombie bot games.
+      if (!room.players.some(p => !p.isBot && p.connected)) room.emptySince = Date.now();
       broadcast(room);
     }
   });
