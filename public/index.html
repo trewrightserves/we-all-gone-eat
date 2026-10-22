@@ -99,6 +99,47 @@
   .step-body .coinline{display:block;margin-top:7px}
   .step-body b{color:var(--gold)}
   .howto-footer{text-align:center;font-size:17px;font-weight:800;font-style:italic;color:var(--gold2);margin:18px 0 14px}
+  /* ---------- how to play: animated scene ---------- */
+  .howto-scene{position:relative;height:196px;margin:8px auto 2px;max-width:340px}
+  .scene-phone{position:absolute;left:50%;top:2px;width:104px;height:178px;margin-left:-52px;border:3px solid var(--gold);border-radius:16px;background:var(--panel2);overflow:hidden;z-index:1}
+  .scene-phone .notch{height:9px;width:36px;margin:5px auto 2px;border-radius:5px;background:#26262b}
+  .scene-card{margin:2px 8px 0;border:2px solid var(--line);border-radius:8px;padding:5px 6px}
+  .scene-cat{font-size:7px;letter-spacing:1.5px;color:var(--hot);font-weight:800;text-transform:uppercase}
+  .scene-line{height:5px;border-radius:3px;background:#3a3a40;margin:4px 0 2px}
+  .scene-line.short{width:62%}
+  .scene-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:6px 8px 0}
+  .scene-sq{height:29px;border:2px solid var(--line);border-radius:7px;position:relative;background:#0c0c0e}
+  .scene-sq.pick{border-color:var(--flame);background:#2a0f08}
+  .scene-lock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;opacity:0;animation:sceneLock 8s linear infinite}
+  .scene-win{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;opacity:0;animation:sceneWin 8s linear infinite}
+  .scene-tally{position:absolute;left:8px;right:8px;bottom:7px;display:flex;gap:4px;align-items:flex-end;height:26px}
+  .scene-bar{flex:1;height:24px;background:linear-gradient(180deg,var(--gold2),var(--hot));border-radius:3px 3px 0 0;opacity:.35;transform:scaleY(.18);transform-origin:bottom;animation:sceneBar1 8s linear infinite}
+  .scene-bar.b2{animation-name:sceneBar2}.scene-bar.b3{animation-name:sceneBar3}.scene-bar.b4{animation-name:sceneBar4}
+  .scene-side{position:absolute;top:62px;width:44px;height:82px;border:3px solid #3a3a40;border-radius:10px;background:var(--panel)}
+  .scene-side.left{left:0}.scene-side.right{right:0}
+  .scene-side .dot{width:16px;height:16px;border-radius:50%;margin:27px auto 0;background:#26262b}
+  .scene-token{position:absolute;top:92px;width:22px;height:22px;border-radius:50%;background:var(--gold);color:#000;font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center;opacity:0;z-index:2;box-shadow:2px 2px 0 rgba(229,50,45,.7)}
+  .scene-token.t1{left:14px;animation:sceneVote1 8s linear infinite}
+  .scene-token.t2{right:14px;animation:sceneVote2 8s linear infinite}
+  .scene-token.t3{right:14px;top:118px;animation:sceneVote3 8s linear infinite}
+  .scene-caption{text-align:center;color:var(--dim);font-size:13px;margin:2px 0 10px}
+  @keyframes sceneLock{0%,10%{opacity:0}18%,74%{opacity:1}80%,100%{opacity:0}}
+  @keyframes sceneWin{0%,72%{opacity:0;transform:scale(.4)}82%,93%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
+  @keyframes sceneVote1{0%,28%{opacity:0;transform:translate(0,0) scale(.7)}36%{opacity:1}54%{opacity:1;transform:translate(104px,-22px) scale(1)}62%,100%{opacity:0;transform:translate(104px,-22px) scale(1)}}
+  @keyframes sceneVote2{0%,34%{opacity:0;transform:translate(0,0) scale(.7)}42%{opacity:1}58%{opacity:1;transform:translate(-104px,-22px) scale(1)}66%,100%{opacity:0;transform:translate(-104px,-22px) scale(1)}}
+  @keyframes sceneVote3{0%,40%{opacity:0;transform:translate(0,0) scale(.7)}48%{opacity:1}62%{opacity:1;transform:translate(-104px,4px) scale(1)}70%,100%{opacity:0;transform:translate(-104px,4px) scale(1)}}
+  @keyframes sceneBar1{0%,56%{transform:scaleY(.18);opacity:.35}72%,93%{transform:scaleY(1);opacity:1}100%{transform:scaleY(.18);opacity:.35}}
+  @keyframes sceneBar2{0%,56%{transform:scaleY(.18);opacity:.35}72%,93%{transform:scaleY(.45);opacity:1}100%{transform:scaleY(.18);opacity:.35}}
+  @keyframes sceneBar3{0%,56%{transform:scaleY(.18);opacity:.35}72%,93%{transform:scaleY(.68);opacity:1}100%{transform:scaleY(.18);opacity:.35}}
+  @keyframes sceneBar4{0%,56%{transform:scaleY(.18);opacity:.35}72%,93%{transform:scaleY(.3);opacity:1}100%{transform:scaleY(.18);opacity:.35}}
+  @media (prefers-reduced-motion: reduce){
+    .scene-lock,.scene-win,.scene-token,.scene-bar{animation:none !important}
+    .scene-lock{opacity:1}.scene-win{opacity:0}
+    .scene-bar{opacity:1}.scene-bar.b1{transform:scaleY(1)}.scene-bar.b2{transform:scaleY(.45)}.scene-bar.b3{transform:scaleY(.68)}.scene-bar.b4{transform:scaleY(.3)}
+  }
+  /* ---------- how to play: step diagrams ---------- */
+  .step-viz{margin:6px 0 4px}
+  .step-viz svg{width:100%;max-width:330px;height:auto;display:block}
 </style>
 </head>
 <body>
@@ -135,6 +176,12 @@
       <h2>House Rules</h2>
       <div id="rulesHost"></div>
       <div id="rulesGuest" class="dim"></div>
+    </div>
+    <div class="panel" id="botPanel">
+      <h2>Bot players 🤖</h2>
+      <p class="dim">Short a few cousins? Seat a bot. Bots vote, lead rounds, and hold their own at the table — they just never touch the Filibuster or Phone a Friend coins. Flying solo tonight? Add at least 2 bots and start the game.</p>
+      <button id="addBotBtn">🤖 Add a bot to the table</button>
+      <p class="dim" id="botHint"></p>
     </div>
     <button class="primary" id="startBtn">Start game</button>
     <p class="dim center" id="lobbyHint"></p>
@@ -175,27 +222,51 @@
     <div class="howto-title">How to Play</div>
     <p class="howto-sub">Six steps. Sixty seconds to learn. A whole night to argue about.</p>
 
+    <div class="howto-scene" aria-hidden="true">
+      <div class="scene-side left"><div class="dot"></div></div>
+      <div class="scene-side right"><div class="dot"></div></div>
+      <div class="scene-phone">
+        <div class="notch"></div>
+        <div class="scene-card"><div class="scene-cat">Cookout Card</div><div class="scene-line"></div><div class="scene-line short"></div></div>
+        <div class="scene-grid">
+          <div class="scene-sq pick"><div class="scene-lock">🔒</div><div class="scene-win">👑</div></div>
+          <div class="scene-sq"></div>
+          <div class="scene-sq"></div>
+          <div class="scene-sq"></div>
+        </div>
+        <div class="scene-tally"><div class="scene-bar b1"></div><div class="scene-bar b2"></div><div class="scene-bar b3"></div><div class="scene-bar b4"></div></div>
+      </div>
+      <div class="scene-token t1">1</div>
+      <div class="scene-token t2">2</div>
+      <div class="scene-token t3">1</div>
+    </div>
+    <p class="scene-caption">Watch the loop: the Leader locks a pick in secret, the crew votes, the tally talks.</p>
+
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-title">Get the Crew In</div>
+      <div class="step-viz"><svg viewBox="0 0 240 84" aria-hidden="true"><rect x="8" y="12" width="46" height="62" rx="8" fill="#141416" stroke="#3a3a40" stroke-width="2.5"/><circle cx="31" cy="36" r="7" fill="#26262b"/><rect x="19" y="52" width="24" height="5" rx="2.5" fill="#3a3a40"/><rect x="186" y="12" width="46" height="62" rx="8" fill="#141416" stroke="#3a3a40" stroke-width="2.5"/><circle cx="209" cy="36" r="7" fill="#26262b"/><rect x="197" y="52" width="24" height="5" rx="2.5" fill="#3a3a40"/><path d="M58 43 L84 43" stroke="#f5b921" stroke-width="2.5" stroke-dasharray="5 5"/><path d="M156 43 L182 43" stroke="#f5b921" stroke-width="2.5" stroke-dasharray="5 5"/><rect x="88" y="6" width="64" height="72" rx="9" fill="#0c0c0e" stroke="#f5b921" stroke-width="3"/><text x="120" y="42" text-anchor="middle" font-size="17" font-weight="900" fill="#f5b921" letter-spacing="2">ABCD</text><text x="120" y="62" text-anchor="middle" font-size="9" fill="#a89f8d">ROOM CODE</text></svg></div>
       <div class="step-body">One person starts a room. Everybody else joins with the 4-letter code. Any phone works. No downloads, no sign-ups.</div>
     </div>
 
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-title">The Leader Picks a Plate</div>
+      <div class="step-viz"><svg viewBox="0 0 240 84" aria-hidden="true"><text x="26" y="50" font-size="17">👑</text><path d="M46 42 L118 30" stroke="#a89f8d" stroke-width="2" stroke-dasharray="4 5"/><rect x="62" y="6" width="116" height="72" rx="10" fill="#141416" stroke="#f5b921" stroke-width="3"/><rect x="74" y="18" width="42" height="22" rx="5" fill="#0c0c0e" stroke="#2c2c30" stroke-width="2"/><rect x="124" y="18" width="42" height="22" rx="5" fill="#2a0f08" stroke="#ff5a3c" stroke-width="2.5"/><rect x="74" y="48" width="42" height="22" rx="5" fill="#0c0c0e" stroke="#2c2c30" stroke-width="2"/><rect x="124" y="48" width="42" height="22" rx="5" fill="#0c0c0e" stroke="#2c2c30" stroke-width="2"/><path d="M139 30 v-4 a6 6 0 0 1 12 0 v4" fill="none" stroke="#f5b921" stroke-width="2.5"/><rect x="136" y="29" width="18" height="13" rx="3" fill="#f5b921"/><circle cx="145" cy="35" r="2.4" fill="#000"/></svg></div>
       <div class="step-body">Each round has a Leader. A card drops with 4 choices. The Leader locks in one pick. In secret. Nobody sees it.</div>
     </div>
 
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-title">Everybody Votes</div>
+      <div class="step-viz"><svg viewBox="0 0 240 84" aria-hidden="true"><circle cx="28" cy="24" r="13" fill="#f5b921"/><text x="28" y="29" text-anchor="middle" font-size="13" font-weight="900" fill="#000">1</text><circle cx="64" cy="24" r="13" fill="#f5b921"/><text x="64" y="29" text-anchor="middle" font-size="13" font-weight="900" fill="#000">2</text><circle cx="28" cy="60" r="13" fill="#f5b921"/><text x="28" y="65" text-anchor="middle" font-size="13" font-weight="900" fill="#000">3</text><circle cx="64" cy="60" r="13" fill="#f5b921"/><text x="64" y="65" text-anchor="middle" font-size="13" font-weight="900" fill="#000">4</text><path d="M84 22 C 106 16, 124 18, 146 21" fill="none" stroke="#ff5a3c" stroke-width="2.5" stroke-dasharray="5 5"/><path d="M84 58 C 106 64, 124 60, 146 58" fill="none" stroke="#ff5a3c" stroke-width="2.5" stroke-dasharray="5 5"/><rect x="150" y="8" width="80" height="30" rx="6" fill="#241a02" stroke="#f5b921" stroke-width="2.5"/><rect x="150" y="46" width="80" height="30" rx="6" fill="#141416" stroke="#2c2c30" stroke-width="2"/></svg></div>
       <div class="step-body">The crew votes for the one they ride with. Are you voting your heart, or reading the Leader's mind? That's the game.</div>
     </div>
 
     <div class="step">
       <div class="step-num">4</div>
       <div class="step-title">Coins Change Everything</div>
+      <div class="step-viz"><svg viewBox="0 0 240 84" aria-hidden="true"><circle cx="45" cy="32" r="24" fill="#141416" stroke="#f5b921" stroke-width="3"/><text x="45" y="39" text-anchor="middle" font-size="18">🗣️</text><text x="45" y="72" text-anchor="middle" font-size="8.5" font-weight="700" fill="#a89f8d">FILIBUSTER</text><circle cx="120" cy="32" r="24" fill="#141416" stroke="#f5b921" stroke-width="3"/><text x="120" y="39" text-anchor="middle" font-size="18">🔀</text><text x="120" y="72" text-anchor="middle" font-size="8.5" font-weight="700" fill="#a89f8d">SWITCH SIDES</text><circle cx="195" cy="32" r="24" fill="#141416" stroke="#f5b921" stroke-width="3"/><text x="195" y="39" text-anchor="middle" font-size="18">📞</text><text x="195" y="72" text-anchor="middle" font-size="8.5" font-weight="700" fill="#a89f8d">PHONE A FRIEND</text></svg></div>
       <div class="step-body">You hold 3 coins, once each, all game.
         <span class="coinline"><b>🗣️ FILIBUSTER:</b> 60 seconds to talk the table around, then everybody re-votes.</span>
         <span class="coinline"><b>🔀 SWITCH SIDES:</b> move your vote before the reveal.</span>
@@ -206,12 +277,14 @@
     <div class="step">
       <div class="step-num">5</div>
       <div class="step-title">Score Like You Mean It</div>
+      <div class="step-viz"><svg viewBox="0 0 240 84" aria-hidden="true"><text x="6" y="17" font-size="11" font-weight="900" fill="#ff3b30">+3</text><rect x="34" y="7" width="118" height="11" rx="5" fill="#ff5a3c"/><text x="6" y="36" font-size="11" font-weight="900" fill="#f5b921">+1</text><rect x="34" y="26" width="40" height="11" rx="5" fill="#f5b921"/><text x="6" y="55" font-size="11" font-weight="900" fill="#f5b921">+1</text><rect x="34" y="45" width="40" height="11" rx="5" fill="#f5b921"/><text x="6" y="74" font-size="11" font-weight="900" fill="#f5b921">+2</text><rect x="34" y="64" width="79" height="11" rx="5" fill="#f5b921"/><circle cx="198" cy="34" r="14" fill="#0c0c0e" stroke="#ff3b30" stroke-width="2.5" stroke-dasharray="4 4"/><text x="198" y="39" text-anchor="middle" font-size="12" font-weight="900" fill="#fff7e6">1</text><text x="198" y="64" text-anchor="middle" font-size="8" font-weight="700" fill="#a89f8d">ON AN ISLAND</text></svg></div>
       <div class="step-body">The reveal: if the crowd's top pick matches the Leader, the Leader banks 3. Match the crowd? +1. Match the Leader? +1. Match both? That's 2. Stranded alone on a pick? That's Man on an Island — switch before the reveal or own it.</div>
     </div>
 
     <div class="step">
       <div class="step-num">6</div>
       <div class="step-title">First to 7 Eats First</div>
+      <div class="step-viz"><svg viewBox="0 0 240 84" aria-hidden="true"><circle cx="80" cy="42" r="32" fill="#141416" stroke="#f5b921" stroke-width="3"/><circle cx="80" cy="42" r="23" fill="none" stroke="#2c2c30" stroke-width="2"/><text x="80" y="52" text-anchor="middle" font-size="23">🍗</text><polygon points="150,10 132,44 145,44 138,74 168,38 154,38" fill="#f5b921" stroke="#ff3b30" stroke-width="1.5"/><text x="192" y="36" font-size="12" font-weight="900" fill="#fff7e6">FIRST</text><text x="192" y="52" font-size="12" font-weight="900" fill="#fff7e6">TO 7</text><text x="192" y="66" font-size="8" font-weight="700" fill="#a89f8d">TIE? LIGHTNING.</text></svg></div>
       <div class="step-body">Hit the target and the game ends. Tied at the top? LIGHTNING ROUND. One card. Winner takes the plate.</div>
     </div>
 
@@ -331,11 +404,15 @@ function render(){
     show('lobby');
     $('lobbyCode').textContent = S.code;
     $('lobbyPlayers').innerHTML = S.players.map(p =>
-      `<li class="${p.connected?'':'off'}"><span>${esc(p.name)}${p.id===S.you.id?' (you)':''}${p.isHost?'<span class="badge">HOST</span>':''}</span><span class="dim">${p.connected?'':'away'}</span></li>`).join('');
+      `<li class="${p.connected?'':'off'}"><span>${esc(p.name)}${p.id===S.you.id?' (you)':''}${p.isHost?'<span class="badge">HOST</span>':''}${p.isBot?`<span class="badge gray">BOT · ${esc(p.personality||'')}</span>`:''}</span><span>${p.isBot && S.isHost ? `<button class="small" data-remove-bot="${p.id}">Send back</button>` : `<span class="dim">${p.connected?'':'away'}</span>`}</span></li>`).join('');
+    document.querySelectorAll('[data-remove-bot]').forEach(b => { b.onclick = () => send({type:'removeBot', playerId: b.dataset.removeBot}); });
+    $('botPanel').style.display = S.isHost ? 'block' : 'none';
+    $('addBotBtn').disabled = S.players.length >= 8;
+    $('botHint').textContent = S.players.length >= 8 ? 'Table is full — 8 seats, that is everybody.' : `Bots at the table: ${S.players.filter(p=>p.isBot).length}.`;
     renderRules();
     $('startBtn').style.display = S.isHost ? 'block' : 'none';
     $('startBtn').disabled = S.players.length < 3;
-    $('lobbyHint').textContent = S.players.length < 3 ? `Waiting for players — need at least 3 (have ${S.players.length}).` :
+    $('lobbyHint').textContent = S.players.length < 3 ? `Waiting for players — need at least 3 (have ${S.players.length}).${S.isHost ? ' Bots count — seat a couple to fill the table.' : ''}` :
       (S.isHost ? 'Tap Start when the table is full.' : 'Waiting for the host to start.');
     return;
   }
@@ -343,7 +420,7 @@ function render(){
     show('over');
     $('winnerText').textContent = S.winner ? S.winner.text : 'Game over';
     $('finalStandings').innerHTML = S.standings.map((p,i) =>
-      `<div class="breakrow"><span>${i+1}. ${esc(p.name)}${p.id===S.you.id?' (you)':''}</span><span class="pts">${p.score} pts</span></div>`).join('');
+      `<div class="breakrow"><span>${i+1}. ${esc(p.name)}${p.id===S.you.id?' (you)':''}${p.isBot?'<span class="badge gray">BOT</span>':''}</span><span class="pts">${p.score} pts</span></div>`).join('');
     if(S.lastLightning){
       $('lightningRecap').innerHTML = `<div class="panel"><h2>⚡ How the Lightning Round went</h2>` +
         S.lastLightning.attempts.map((a,i) => `<div class="dim">Card ${i+1}: ${esc(a.card.prompt)}</div>` +
@@ -359,7 +436,7 @@ function render(){
 
 function scoreStrip(){
   $('scoreStrip').innerHTML = S.players.map(p =>
-    `<span class="chip ${p.id===S.you.id?'me':''} ${p.connected?'':'off'}">${p.isLeader?'👑 ':''}${esc(p.name)} · ${p.score}</span>`).join('');
+    `<span class="chip ${p.id===S.you.id?'me':''} ${p.connected?'':'off'}">${p.isLeader?'👑 ':''}${p.isBot?'🤖 ':''}${esc(p.name)} · ${p.score}</span>`).join('');
 }
 
 function gridHTML(opts){
@@ -487,7 +564,7 @@ function renderGame(){
     const R = S.lastReveal;
     let html = cardHead + `<p class="center">👑 ${esc(R.leaderName)} locked <b>${esc(R.leaderPickLabel)}</b> — ${R.leaderPoints ? 'the table matched it. <span class="pts">Leader +3</span>' : (R.isSplit ? 'the vote SPLIT at the top, so the Leader scores 0.' : 'the table went another way. Leader +0.')}</p>` + gridHTML(card.options) + `</div>`;
     html += `<div class="panel"><h2>Who ate</h2>` + R.breakdown.map(b =>
-      `<div class="breakrow"><span>${esc(b.name)} → ${b.voteLabel ? esc(b.voteLabel) : 'no vote'} ${b.majority?'<span class="badge">MAJORITY</span>':''} ${b.match?'<span class="badge">MATCHED THE LEADER</span>':''}</span><span class="pts">+${b.points}</span></div>`).join('') + `</div>`;
+      `<div class="breakrow"><span>${esc(b.name)}${b.isBot?'<span class="badge gray">BOT</span>':''} → ${b.voteLabel ? esc(b.voteLabel) : 'no vote'} ${b.majority?'<span class="badge">MAJORITY</span>':''} ${b.match?'<span class="badge">MATCHED THE LEADER</span>':''}</span><span class="pts">+${b.points}</span></div>`).join('') + `</div>`;
     if(S.isHost) html += `<button class="primary" id="nextBtn">Next round</button>`;
     else html += `<p class="dim center">Waiting for the host to deal the next card…</p>`;
     A.innerHTML = html;
@@ -511,6 +588,7 @@ function renderGame(){
 
 // ---------- lobby + game over buttons ----------
 $('startBtn').onclick = () => send({type:'startGame'});
+$('addBotBtn').onclick = () => send({type:'addBot'});
 $('againBtn').onclick = () => send({type:'playAgain'});
 $('copyResultBtn').onclick = () => {
   if(!S || !S.winner) return;
