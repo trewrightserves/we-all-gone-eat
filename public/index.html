@@ -140,6 +140,11 @@
   /* ---------- how to play: step diagrams ---------- */
   .step-viz{margin:6px 0 4px}
   .step-viz svg{width:100%;max-width:330px;height:auto;display:block}
+  /* ---------- write-ins (v4) ---------- */
+  .writein{display:flex;gap:8px;margin-top:10px}
+  .writein input{flex:1;width:auto;min-width:0}
+  .writein button{width:auto;margin:0;white-space:nowrap}
+  .witag{color:var(--gold);font-weight:800}
   /* ---------- group chat ---------- */
   #chatBtn{position:fixed;right:14px;bottom:14px;width:auto;margin:0;padding:11px 16px;border-radius:24px;z-index:7;background:var(--gold);color:#000;border-color:#000;box-shadow:4px 4px 0 rgba(229,50,45,.8)}
   .chat-badge{position:absolute;top:-9px;right:-6px;min-width:22px;height:22px;line-height:22px;border-radius:11px;background:var(--danger);color:#fff;font-size:12px;font-weight:900;padding:0 6px;text-align:center}
@@ -270,7 +275,8 @@
       <div class="step-num">2</div>
       <div class="step-title">The Leader Picks a Plate</div>
       <div class="step-viz"><svg viewBox="0 0 240 84" aria-hidden="true"><text x="26" y="50" font-size="17">👑</text><path d="M46 42 L118 30" stroke="#a89f8d" stroke-width="2" stroke-dasharray="4 5"/><rect x="62" y="6" width="116" height="72" rx="10" fill="#141416" stroke="#f5b921" stroke-width="3"/><rect x="74" y="18" width="42" height="22" rx="5" fill="#0c0c0e" stroke="#2c2c30" stroke-width="2"/><rect x="124" y="18" width="42" height="22" rx="5" fill="#2a0f08" stroke="#ff5a3c" stroke-width="2.5"/><rect x="74" y="48" width="42" height="22" rx="5" fill="#0c0c0e" stroke="#2c2c30" stroke-width="2"/><rect x="124" y="48" width="42" height="22" rx="5" fill="#0c0c0e" stroke="#2c2c30" stroke-width="2"/><path d="M139 30 v-4 a6 6 0 0 1 12 0 v4" fill="none" stroke="#f5b921" stroke-width="2.5"/><rect x="136" y="29" width="18" height="13" rx="3" fill="#f5b921"/><circle cx="145" cy="35" r="2.4" fill="#000"/></svg></div>
-      <div class="step-body">Each round has a Leader. A card drops with 4 choices. The Leader locks in one pick. In secret. Nobody sees it.</div>
+      <div class="step-body">Each round has a Leader. A card drops with 4 choices. The Leader locks in one pick. In secret. Nobody sees it.
+        <span class="coinline"><b>✍️ WRITE-INS:</b> if none of the 4 are it, write in your own — the Leader can too, and matching write-ins stack up like any other pick.</span></div>
     </div>
 
     <div class="step">
@@ -404,6 +410,8 @@ const RULE_DEFS = [
     {v:'after', t:'After the tally shows'}, {v:'before', t:'Before the tally shows', slate:'OA/Luna slate D'} ]},
   { key:'targetScore', label:'Target score', small:'First to this many points.', opts:[
     {v:7, t:'7'}, {v:10, t:'10'}, {v:12, t:'12'}, {v:15, t:'15'} ]},
+  { key:'writeIns', label:'Write-ins', small:'Leader and crew can write in their own pick instead of a square.', opts:[
+    {v:'true', t:'On — write-ins welcome'}, {v:'false', t:'Off — the 4 squares only'} ]},
 ];
 function renderRules(){
   const host = S.isHost, st = S.settings;
@@ -419,6 +427,7 @@ function renderRules(){
       const key = b.dataset.rule;
       let val = b.dataset.val;
       if(key === 'targetScore') val = parseInt(val, 10);
+      if(key === 'writeIns') val = (val === 'true');
       const next = Object.assign({}, S.settings, {[key]: val});
       send({type:'setSettings', settings: next});
     };
@@ -487,6 +496,31 @@ function gridHTML(opts){
 function bindGrid(fn){
   document.querySelectorAll('.sq').forEach(b => b.onclick = () => fn(parseInt(b.dataset.opt, 10)));
 }
+// ---------- write-ins (v4) ----------
+// One write-in row per screen: an input + button next to the 4 squares.
+// Hidden entirely when the House Rule is off (the server rejects them too).
+// The draft survives re-renders — the table voting repaints the screen,
+// and nobody should lose a half-typed plate to somebody else's tap.
+let wiDraft = '';
+function writeInRow(){
+  if(!S.settings.writeIns) return '';
+  return `<div class="writein"><input type="text" id="wiInput" maxlength="40" placeholder="✍️ Write in your own…"><button id="wiBtn">Write it in</button></div>`;
+}
+function bindWriteIn(fn){
+  const inp = $('wiInput'), b = $('wiBtn');
+  if(!inp || !b) return;
+  inp.value = wiDraft;
+  inp.addEventListener('input', () => { wiDraft = inp.value; });
+  const go = () => { const t = inp.value.trim(); wiDraft = ''; fn(t); };
+  b.onclick = go;
+  inp.addEventListener('keydown', e => { if(e.key === 'Enter') go(); });
+}
+function hasVoted(){ return S.you.yourVote !== null || S.you.yourVoteText !== null; }
+function myPickLabel(){
+  if(S.you.yourPickText !== null) return '✍️ ' + S.you.yourPickText;
+  if(S.you.yourPick !== null && S.card) return S.card.options[S.you.yourPick];
+  return null;
+}
 function coinButtons(){
   const c = S.you.coins, inWindow = S.phase === 'coinWindow';
   return `<div class="coins">
@@ -519,8 +553,9 @@ function renderGame(){
   if(S.phase === 'leaderPick'){
     if(S.you.isLeader){
       A.innerHTML = cardHead + `<p class="center">You are the Leader. Lock your pick in secret — nobody sees it until the reveal.</p>` +
-        gridHTML(card.options) + `</div>`;
+        gridHTML(card.options) + writeInRow() + `</div>`;
       bindGrid(i => send({type:'leaderPick', option:i}));
+      bindWriteIn(t => send({type:'leaderPick', writeIn:t}));
     } else {
       A.innerHTML = cardHead + `<p class="center">👑 ${esc(S.leaderName)} is the Leader and is locking a secret pick…</p></div>`;
     }
@@ -529,21 +564,27 @@ function renderGame(){
 
   if(S.phase === 'voting'){
     if(S.you.isLeader){
-      A.innerHTML = cardHead + `<p class="center">Your pick is locked. The crowd is voting (${S.votesIn}/${S.crowdCount})…</p></div>`;
-    } else if(S.you.yourVote === null){
-      A.innerHTML = cardHead + `<p class="center">Vote for the square you ride with.</p>` + gridHTML(card.options) + `</div>`;
+      const mine = myPickLabel();
+      A.innerHTML = cardHead + `<p class="center">Your pick is locked${mine ? `: <b>${esc(mine)}</b>` : ''}. The crowd is voting (${S.votesIn}/${S.crowdCount})…</p></div>`;
+    } else if(!hasVoted()){
+      A.innerHTML = cardHead + `<p class="center">Vote for the square you ride with — or write in your own.</p>` + gridHTML(card.options) + writeInRow() + `</div>`;
       bindGrid(i => send({type:'vote', option:i}));
+      bindWriteIn(t => send({type:'vote', writeIn:t}));
     } else {
       let extra = '';
       if(S.settings.switchTiming === 'before' && S.you.coins.switch){
         extra = `<button id="armSwitch" class="small">🔀 Arm Switch Sides (spend coin, then tap a new square)</button>`;
       }
-      A.innerHTML = cardHead + `<p class="center">Vote locked: <b>${esc(card.options[S.you.yourVote])}</b>. Waiting on the rest of the table (${S.votesIn}/${S.crowdCount})…</p>${extra}</div>`;
+      const locked = S.you.yourVoteText !== null
+        ? `Vote locked: <span class="witag">✍️ ${esc(S.you.yourVoteText)}</span> (your write-in)`
+        : `Vote locked: <b>${esc(card.options[S.you.yourVote])}</b>`;
+      A.innerHTML = cardHead + `<p class="center">${locked}. Waiting on the rest of the table (${S.votesIn}/${S.crowdCount})…</p>${extra}</div>`;
       const arm = $('armSwitch');
       if(arm) arm.onclick = () => { pendingSwitch = true; render(); };
       if(pendingSwitch){
-        A.innerHTML = cardHead + `<p class="center">Switch armed — tap the square you are moving TO.</p>` + gridHTML(card.options) + `</div>`;
+        A.innerHTML = cardHead + `<p class="center">Switch armed — tap the square you are moving TO, or write in a new one.</p>` + gridHTML(card.options) + writeInRow() + `</div>`;
         bindGrid(i => { pendingSwitch = false; send({type:'switchVote', option:i}); });
+        bindWriteIn(t => { pendingSwitch = false; send({type:'switchVote', writeIn:t}); });
       }
     }
     return;
@@ -551,6 +592,13 @@ function renderGame(){
 
   if(S.phase === 'coinWindow' || S.phase === 'discussion' || S.phase === 'repoll'){
     let html = cardHead + `<p class="cardcat">The tally</p>` + gridHTML(card.options) + `</div>`;
+    const wib = (S.buckets || []).filter(b => b.writeIn);
+    if(wib.length){
+      // Pre-reveal the server masks these labels ("✍️ Write-in") — the
+      // counts are public, the words stay secret until the reveal.
+      html += `<div class="panel"><p class="cardcat">✍️ Write-in buckets</p>` + wib.map(b =>
+        `<div class="breakrow"><span>${esc(b.label)}</span><span>${b.count} vote${b.count===1?'':'s'}</span></div>`).join('') + `</div>`;
+    }
     if(islandHTML && S.phase === 'coinWindow'){ html += islandHTML; } else islandHTML = islandHTML && S.phase==='coinWindow' ? islandHTML : '';
     if(phonePath){
       const full = location.origin + phonePath;
@@ -559,14 +607,14 @@ function renderGame(){
     if(phoneAnswer){
       html += `<div class="banner">📞 Your friend picked <b>${esc(phoneAnswer.optionLabel)}</b>. ${S.you.freeChange ? 'Tap any square to move your vote there (free), or leave your vote as is.' : ''}</div>`;
     }
-    if(pendingSwitch){
-      html += `<div class="banner">🔀 Switch armed — tap the square you are moving TO.</div>`;
+    if(pendingSwitch && S.phase === 'coinWindow'){
+      html += `<div class="banner">🔀 Switch armed — tap the square you are moving TO, or write in a new one.${writeInRow()}</div>`;
     }
     if(S.phase === 'discussion'){
       html += `<div class="panel center"><h2>🗣️ Filibuster!</h2><p>${esc(S.filibusterBy||'A player')} has the floor. Make the case — a re-poll opens when the clock runs out.</p><div class="timer" id="cd">--</div></div>`;
     }
     if(S.phase === 'repoll'){
-      html += `<div class="panel center"><h2>Re-poll!</h2><p>Seconds left to change your vote — just tap a square. Free, no coin needed.</p><div class="timer" id="cd">--</div></div>`;
+      html += `<div class="panel center"><h2>Re-poll!</h2><p>Seconds left to change your vote — just tap a square${S.settings.writeIns ? ', or write in a new one' : ''}. Free, no coin needed.</p>${S.you.isLeader ? '' : writeInRow()}<div class="timer" id="cd">--</div></div>`;
     }
     if(S.phase === 'coinWindow'){
       html += `<div class="panel"><h2>Coin window</h2><p class="dim">Play a coin, ready up, or wait for the host to reveal.</p>${coinButtons()}
@@ -582,8 +630,10 @@ function renderGame(){
     // Grid taps inside the coin window depend on what's armed:
     if(S.phase === 'repoll' && !S.you.isLeader){
       bindGrid(i => send({type:'vote', option:i}));
+      bindWriteIn(t => send({type:'vote', writeIn:t}));
     } else if(pendingSwitch){
       bindGrid(i => { pendingSwitch = false; send({type:'switchVote', option:i}); });
+      bindWriteIn(t => { pendingSwitch = false; send({type:'switchVote', writeIn:t}); });
     } else if(S.you.freeChange && S.phase !== 'repoll'){
       bindGrid(i => send({type:'freeVote', option:i}));
     }
@@ -596,9 +646,14 @@ function renderGame(){
 
   if(S.phase === 'reveal'){
     const R = S.lastReveal;
-    let html = cardHead + `<p class="center">👑 ${esc(R.leaderName)} locked <b>${esc(R.leaderPickLabel)}</b> — ${R.leaderPoints ? 'the table matched it. <span class="pts">Leader +3</span>' : (R.isSplit ? 'the vote SPLIT at the top, so the Leader scores 0.' : 'the table went another way. Leader +0.')}</p>` + gridHTML(card.options) + `</div>`;
+    let html = cardHead + `<p class="center">👑 ${esc(R.leaderName)} locked <b>${esc(R.leaderPickLabel)}</b>${R.leaderPickWriteIn?' <span class="badge">✍️ WRITE-IN</span>':''} — ${R.leaderPoints ? 'the table matched it. <span class="pts">Leader +3</span>' : (R.isSplit ? 'the vote SPLIT at the top, so the Leader scores 0.' : 'the table went another way. Leader +0.')}</p>` + gridHTML(card.options) + `</div>`;
     html += `<div class="panel"><h2>Who ate</h2>` + R.breakdown.map(b =>
-      `<div class="breakrow"><span>${esc(b.name)}${b.isBot?'<span class="badge gray">BOT</span>':''} → ${b.voteLabel ? esc(b.voteLabel) : 'no vote'} ${b.majority?'<span class="badge">MAJORITY</span>':''} ${b.match?'<span class="badge">MATCHED THE LEADER</span>':''}</span><span class="pts">+${b.points}</span></div>`).join('') + `</div>`;
+      `<div class="breakrow"><span>${esc(b.name)}${b.isBot?'<span class="badge gray">BOT</span>':''} → ${b.voteLabel ? esc(b.voteLabel) : 'no vote'}${b.voteWriteIn?' <span class="badge">✍️ WRITE-IN</span>':''} ${b.majority?'<span class="badge">MAJORITY</span>':''} ${b.match?'<span class="badge">MATCHED THE LEADER</span>':''}</span><span class="pts">+${b.points}</span></div>`).join('') + `</div>`;
+    const wb = (R.buckets || []).filter(b => b.writeIn);
+    if(wb.length){
+      html += `<div class="panel"><h2>✍️ Write-in buckets</h2>` + wb.map(b =>
+        `<div class="breakrow"><span>✍️ ${esc(b.label)}</span><span>${b.count} vote${b.count===1?'':'s'}</span></div>`).join('') + `</div>`;
+    }
     if(S.isHost) html += `<button class="primary" id="nextBtn">Next round</button>`;
     else html += `<p class="dim center">Waiting for the host to deal the next card…</p>`;
     A.innerHTML = html;
@@ -612,10 +667,13 @@ function renderGame(){
     let html = `<div class="panel"><div class="cardcat">⚡ LIGHTNING ROUND ⚡</div>
       <p class="center">${names} — tied at the top. Everybody votes on this card. The tied players' votes, plus the Leader's, decide it. Any tie left standing gets broken by the rest of the table.</p>`;
     if(L.attempts.length) html += L.attempts.map((a,i) => `<div class="dim">Card ${i+1}: ${esc(a.card.prompt)} — ${a.standings.map(s => `${esc(s.name)}: ${s.count}`).join(' · ')}${a.usedTiebreak?' (tiebreak votes counted)':''}</div>`).join('');
-    html += `</div>` + (card ? `<div class="panel"><div class="cardcat">${esc(card.category)}</div><div class="cardprompt">${esc(card.prompt)}</div>` + gridHTML(card.options) + `</div>` : '');
-    if(S.you.yourVote !== null) html += `<p class="center dim">Vote in. Waiting on the table (${L.votesIn}/${S.players.filter(p=>p.connected).length})…</p>`;
+    html += `</div>` + (card ? `<div class="panel"><div class="cardcat">${esc(card.category)}</div><div class="cardprompt">${esc(card.prompt)}</div>` + gridHTML(card.options) + (hasVoted() ? '' : writeInRow()) + `</div>` : '');
+    if(hasVoted()) html += `<p class="center dim">Vote in. Waiting on the table (${L.votesIn}/${S.players.filter(p=>p.connected).length})…</p>`;
     A.innerHTML = html;
-    if(S.you.yourVote === null) bindGrid(i => send({type:'vote', option:i}));
+    if(!hasVoted()){
+      bindGrid(i => send({type:'vote', option:i}));
+      bindWriteIn(t => send({type:'vote', writeIn:t}));
+    }
     return;
   }
 }
