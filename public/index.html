@@ -140,6 +140,23 @@
   /* ---------- how to play: step diagrams ---------- */
   .step-viz{margin:6px 0 4px}
   .step-viz svg{width:100%;max-width:330px;height:auto;display:block}
+  /* ---------- group chat ---------- */
+  #chatBtn{position:fixed;right:14px;bottom:14px;width:auto;margin:0;padding:11px 16px;border-radius:24px;z-index:7;background:var(--gold);color:#000;border-color:#000;box-shadow:4px 4px 0 rgba(229,50,45,.8)}
+  .chat-badge{position:absolute;top:-9px;right:-6px;min-width:22px;height:22px;line-height:22px;border-radius:11px;background:var(--danger);color:#fff;font-size:12px;font-weight:900;padding:0 6px;text-align:center}
+  #chatDrawer{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:min(560px,100vw);height:min(62vh,500px);background:var(--panel);border:3px solid var(--gold);border-bottom:none;border-radius:16px 16px 0 0;z-index:11;display:flex;flex-direction:column;box-shadow:0 -6px 30px rgba(0,0,0,.8)}
+  #chatDrawer.hidden{display:none}
+  .chat-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:2px solid var(--line);font-weight:900;text-transform:uppercase;letter-spacing:.5px;color:var(--gold)}
+  .chat-head button{margin:0}
+  #chatLog{flex:1;overflow-y:auto;padding:10px 12px}
+  .chat-msg{margin:0 0 10px;max-width:88%}
+  .chat-msg .chat-name{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--gold);margin-bottom:2px}
+  .chat-msg .chat-text{background:var(--panel2);border:2px solid var(--line);border-radius:12px;padding:8px 11px;font-size:15px;line-height:1.4;word-break:break-word;white-space:pre-wrap}
+  .chat-msg.mine{margin-left:auto}
+  .chat-msg.mine .chat-name{text-align:right;color:var(--hot)}
+  .chat-msg.mine .chat-text{border-color:var(--gold);background:#241a02}
+  .chat-row{display:flex;gap:6px;padding:8px;border-top:2px solid var(--line)}
+  .chat-row input{flex:1}
+  .chat-row button{margin:0}
 </style>
 </head>
 <body>
@@ -293,6 +310,17 @@
   </div>
 </div>
 
+<!-- GROUP CHAT (lives outside the screens — same table talk in lobby and game) -->
+<button id="chatBtn" class="hidden">💬 Chat<span id="chatBadge" class="chat-badge hidden">0</span></button>
+<div id="chatDrawer" class="hidden">
+  <div class="chat-head"><span>💬 Table talk</span><button id="chatClose" class="small">✕ Close</button></div>
+  <div id="chatLog"></div>
+  <div class="chat-row">
+    <input type="text" id="chatInput" maxlength="300" placeholder="Talk your talk…" autocomplete="off">
+    <button id="chatSend" class="small primary">Send</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -318,8 +346,13 @@ function connect(then){
       myId = msg.playerId; myToken = msg.token; myCode = msg.code;
       localStorage.setItem('wage_token', myToken);
       localStorage.setItem('wage_code', myCode);
+      resetChat(); // fresh room (or a rejoin — the server re-sends our history)
     } else if(msg.type === 'state'){
       S = msg; render();
+    } else if(msg.type === 'chat'){
+      addChatMsg(msg, false);
+    } else if(msg.type === 'chatHistory'){
+      msg.messages.forEach(m => addChatMsg(m, true));
     } else if(msg.type === 'error'){
       toast(msg.message);
     } else if(msg.type === 'islandPrompt'){
@@ -400,6 +433,7 @@ function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&l
 
 function render(){
   if(!S) return;
+  $('chatBtn').classList.remove('hidden'); // in a room — table talk is open
   if(S.phase === 'lobby'){
     show('lobby');
     $('lobbyCode').textContent = S.code;
@@ -625,6 +659,52 @@ $('howtoBtnHome').onclick = openHowto;
 $('howtoBtnLobby').onclick = openHowto;
 $('howtoClose').onclick = closeHowto;
 $('howtoX').onclick = closeHowto;
+
+// ---------- group chat ----------
+// Chat is a pure relay: messages arrive as {type:'chat'} (live) or
+// {type:'chatHistory'} (the room's recent talk, sent when we join).
+// Names and text are rendered through esc() — talk can never inject HTML.
+let chatOpen = false, chatUnread = 0;
+function updateChatBadge(){
+  const b = $('chatBadge');
+  b.textContent = chatUnread;
+  b.classList.toggle('hidden', chatUnread === 0);
+}
+function addChatMsg(m, historical){
+  const log = $('chatLog');
+  const mine = m.fromId === myId;
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (mine ? ' mine' : '');
+  div.innerHTML = `<div class="chat-name">${mine ? 'You' : esc(m.name)}</div><div class="chat-text">${esc(m.text)}</div>`;
+  log.appendChild(div);
+  while(log.children.length > 120) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+  if(!chatOpen && !mine && !historical){ chatUnread++; updateChatBadge(); }
+}
+function resetChat(){
+  $('chatLog').innerHTML = '';
+  chatUnread = 0; updateChatBadge();
+}
+function openChat(){
+  chatOpen = true;
+  $('chatDrawer').classList.remove('hidden');
+  chatUnread = 0; updateChatBadge();
+  const log = $('chatLog'); log.scrollTop = log.scrollHeight;
+  $('chatInput').focus();
+}
+function closeChat(){ chatOpen = false; $('chatDrawer').classList.add('hidden'); }
+function sendChat(){
+  const inp = $('chatInput');
+  const text = inp.value.trim();
+  if(!text) return;
+  send({type:'chat', text});
+  inp.value = '';
+  inp.focus();
+}
+$('chatBtn').onclick = openChat;
+$('chatClose').onclick = closeChat;
+$('chatSend').onclick = sendChat;
+$('chatInput').addEventListener('keydown', e => { if(e.key === 'Enter') sendChat(); });
 </script>
 </body>
 </html>
