@@ -68,6 +68,41 @@ only through the Man on an Island flow. Bots keep their vote during a
 Filibuster re-poll. Hosting never falls to a bot, and a room closes on
 the normal schedule once the last human leaves — no zombie bot games.
 
+## Group chat + Food Debates deck (v3)
+
+**Group chat.** Every room has its own table talk. Tap **💬 Chat**
+(bottom corner) in the lobby or mid-game to open the panel; type, hit
+Send or Enter, and everybody in *this* room sees it in real time with
+your name on it. The button wears a red badge with your unread count
+while the panel is closed. Chat is a pure relay — it carries no game
+state and never touches phases, timers, coins, or the Leader's secret
+pick.
+
+- **Room-scoped, always.** A message goes to your room and nowhere
+  else; it dies when the room closes (rooms are in-memory, so chat is
+  too — nothing is stored).
+- **History choice:** the room keeps its last **50 messages**, and
+  anybody who joins or rejoins is handed that recent talk on arrival,
+  so a late cousin can catch up on the argument.
+- **Caps and guardrails:** messages are trimmed and capped at
+  **300 characters** (the box counts too), empty messages are dropped,
+  and each player can send at most **5 messages per 4 seconds** — past
+  that, the server tells you to slow down and drops the extras.
+- **Safe by construction:** names and chat text render through the
+  client's HTML escaper, so markup typed into chat shows up as plain
+  text, never as live HTML.
+- **Bots don't chat.** Table talk is for the humans; bots keep their
+  opinions to the voting.
+
+**Food Debates deck.** Batch 5 adds 50 cards (101–150, category
+**Food Debates**), taking the deck to **150 cards**. These are rankings
+and hot takes instead of plates: cards 101–125 are cereal debates
+(best of all time, worst ever made, most overrated, best dry with no
+milk, first pick in the cereal draft…), and cards 126–150 run the same
+debate shapes on other categories — wing flavors, pizza toppings,
+sodas, fast-food fries, BBQ sides, pies, breakfast plates, chips, ice
+cream, Kool-Aid, sauces, and gas-station snacks.
+
 ## How a game flows
 
 1. **Lobby** — host creates the room, everyone joins by code, host sets the
@@ -142,10 +177,10 @@ No database, no environment secrets, nothing else to configure.
 ```
 server.js          Game server: HTTP + WebSocket, all state and scoring
 bots.js            Bot players: names, personalities, their card judgment
-deck.js            The full 100-card deck + winner result-card texts
+deck.js            The full 150-card deck + winner result-card texts
 public/index.html  The entire phone client (no build step, no CDN)
-test/e2e-test.js   Scripted end-to-end tests (Games A/B/C + personalities)
-test/last-run.log  Latest passing test output (63 assertions)
+test/e2e-test.js   Scripted end-to-end tests (Games A/B/C/D + personalities)
+test/last-run.log  Latest passing test output (82 assertions)
 ```
 
 ## Test
@@ -161,4 +196,9 @@ Lightning Round with a declared winner (Games A and B, 46 assertions).
 Game C adds the bots: host-only add/remove in the lobby, a 1-human +
 2-bot game played to a winner with bot-led rounds and a bot Man on an
 Island, and a distribution sanity check that the four personalities
-measurably vote differently.
+measurably vote differently. Game D adds v3: deck integrity for the
+150-card deck (exactly 4 options per card, no duplicate prompts, the
+Food Debates batch tagged consistently) and the group chat — delivery
+in the lobby and mid-game, no leaks into another room, the join-time
+history handoff, empty/over-length handling, HTML kept inert, and the
+send-rate guard.

@@ -17,6 +17,12 @@ const REPOLL_MS = parseInt(process.env.REPOLL_MS || '15000', 10);
 // readies up, or answers its Man on an Island nudge.
 const BOT_DELAY_MIN_MS = parseInt(process.env.BOT_DELAY_MIN_MS || '1500', 10);
 const BOT_DELAY_MAX_MS = parseInt(process.env.BOT_DELAY_MAX_MS || '4000', 10);
+// Group chat: a plain relay inside the room. Messages are length-capped,
+// lightly rate-guarded, kept only in room memory, and carry no game state.
+const CHAT_MAX_LEN = 300;
+const CHAT_HISTORY_MAX = 50;      // room keeps this much talk; joiners get it
+const CHAT_RATE_COUNT = 5;        // messages allowed...
+const CHAT_RATE_WINDOW_MS = 4000; // ...per this window, per player
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ'; // no I/L/O look-alikes
 const MAX_PLAYERS = 8;
@@ -96,6 +102,7 @@ function makeRoom(hostPlayer) {
     winnerId: null,
     winnerText: null,
     voteHistory: [],   // tallies from completed rounds (public info; bots read this)
+    chat: [],          // room talk, oldest first, capped at CHAT_HISTORY_MAX
     createdAt: Date.now(),
     emptySince: null,
   };
@@ -214,6 +221,9 @@ function broadcast(room) {
   driveBots(room);
 }
 function fail(player, message) { send(player, { type: 'error', message }); }
+function sendChatHistory(room, player) {
+  if (room.chat.length) send(player, { type: 'chatHistory', messages: room.chat });
+}
 
 // ---------- bot players ----------
 // Bots act by feeding their moves through handleMessage, exactly like a
@@ -533,6 +543,24 @@ function finishGame(room, winner) {
 function handleMessage(room, player, msg) {
   const r = room.round;
   switch (msg.type) {
+    case 'chat': {
+      // Room-scoped table talk: a pure relay inside this room only. It
+      // never touches phases, timers, coins, or the secret pick, and it
+      // carries no game state. Bots don't chat.
+      if (player.isBot) return;
+      const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, CHAT_MAX_LEN) : '';
+      if (!text) return; // empty talk is just air — drop it quietly
+      const now = Date.now();
+      player._chatTimes = (player._chatTimes || []).filter(t => now - t < CHAT_RATE_WINDOW_MS);
+      if (player._chatTimes.length >= CHAT_RATE_COUNT) return fail(player, 'Slow down — the table can only read so fast.');
+      player._chatTimes.push(now);
+      const entry = { fromId: player.id, name: player.name, text, ts: now };
+      room.chat.push(entry);
+      if (room.chat.length > CHAT_HISTORY_MAX) room.chat.splice(0, room.chat.length - CHAT_HISTORY_MAX);
+      const out = { type: 'chat', ...entry };
+      for (const p of room.players) if (p.connected) send(p, out);
+      break;
+    }
     case 'setSettings': {
       if (!isHost(room, player) || room.phase !== 'lobby') return fail(player, 'Only the host can change House Rules in the lobby.');
       const s = msg.settings || {};
@@ -853,6 +881,7 @@ wss.on('connection', ws => {
           player.connected = true;
           if (msg.name) player.name = String(msg.name).slice(0, 20);
           send(player, { type: 'joined', code: room.code, playerId: player.id, token: player.token, isHost: isHost(room, player), rejoined: true });
+          sendChatHistory(room, player);
           broadcast(room);
           // Re-issue an island prompt if the table is sitting in the coin window.
           if (room.phase === 'coinWindow' && room.settings.switchTiming === 'after') sendIslandPrompts(room);
@@ -865,6 +894,7 @@ wss.on('connection', ws => {
         player.connected = true;
         room.players.push(player);
         send(player, { type: 'joined', code: room.code, playerId: player.id, token: player.token, isHost: false });
+        sendChatHistory(room, player);
         broadcast(room);
         return;
       }
